@@ -1,7 +1,11 @@
-// Code for the receiver module.
+// Receiver code with mesage counter
 
 #include <Wire.h>
 #include <U8g2lib.h> // Assuming you were using U8g2lib for your OLED
+#include <SPI.h>
+#include <LoRa.h>
+#include <String> // Include the String library
+#include <vector> // Use vector for dynamic history
 
 // Define the OLED reset pin based on your pinout diagram (GPIO16)
 const int OLED_RESET_PIN = 16;
@@ -11,39 +15,144 @@ const int OLED_SDA_PIN = 4;
 const int OLED_SCL_PIN = 15;
 
 // Initialize the U8g2 library for a 128x64 OLED (adjust if yours is different)
-// The constructor parameters might need adjustment based on your specific OLED module
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ OLED_SCL_PIN, /* data=*/ OLED_SDA_PIN);
+
+// Define LoRa pins (adjust these based on your specific LoRa module and ESP32 wiring)
+const int LORA_CS = 18;   // Chip Select pin
+const int LORA_RST = 14;  // Reset pin
+const int LORA_IRQ = 26;  // Interrupt pin (DIO0)
+
+// Use a vector to store the message history
+std::vector<String> messageHistory;
+int maxLinesForHistory = 0; // Will be calculated in setup (total lines - 1 for counter)
+int lineHeight = 0;       // Will be calculated in setup
+int receivedMessageCount = 0; // Global counter for received messages
+
+// Helper function to wrap a string into lines that fit within a given width
+std::vector<String> wrapString(U8G2& u8g2, int width, const String& text) {
+  std::vector<String> wrappedLines;
+  String currentLine = "";
+  const char* delimiter = " ";
+  char* str = strdup(text.c_str());
+  char* token = strtok(str, delimiter);
+
+  while (token != NULL) {
+    String word = token;
+    int wordWidth = u8g2.getStrWidth(word.c_str());
+    int currentLineWidth = u8g2.getStrWidth(currentLine.c_str());
+
+    if (currentLineWidth == 0) {
+      currentLine = word;
+    } else if (currentLineWidth + u8g2.getStrWidth(" ") + wordWidth < width) {
+      currentLine += " " + word;
+    } else {
+      wrappedLines.push_back(currentLine);
+      currentLine = word;
+    }
+    token = strtok(NULL, delimiter);
+  }
+  if (currentLine.length() > 0) {
+    wrappedLines.push_back(currentLine);
+  }
+
+  free(str);
+  return wrappedLines;
+}
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Resetting OLED");
+  Serial.println("LoRa Receiver with OLED Message History and Counter");
 
-  // Initialize the reset pin as an output
+  // Initialize the OLED
   pinMode(OLED_RESET_PIN, OUTPUT);
-
-  // Perform the reset sequence
-  digitalWrite(OLED_RESET_PIN, LOW);  // Set reset pin low to trigger reset
-  delay(100);                       // Wait for a short period
-  digitalWrite(OLED_RESET_PIN, HIGH); // Release reset
-  delay(100);                       // Wait for the OLED to initialize
-
-  // Initialize the I2C bus with the correct pins
+  digitalWrite(OLED_RESET_PIN, LOW);
+  delay(100);
+  digitalWrite(OLED_RESET_PIN, HIGH);
   Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
-
-  // Initialize the U8g2 library
   if (!u8g2.begin()) {
     Serial.println("U8g2 initialization failed");
   } else {
-    Serial.println("U8g2 initialized");
-    // Display a test message after reset
-    u8g2.setFont(u8g_font_ncenB08);
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 15, "OLED Reset");
-    u8g2.drawStr(0, 30, "Successful");
-    u8g2.sendBuffer();
+    Serial.println("OLED initialized");
+    u8g2.setFont(u8g_font_ncenB08); // Using a smaller font for more messages
+    lineHeight = u8g2.getFontAscent() - u8g2.getFontDescent() + 2; // Calculate line height
+    maxLinesForHistory = (64 / lineHeight) - 1; // Calculate max lines for history (total lines - 1 for counter)
+    if (maxLinesForHistory < 0) maxLinesForHistory = 0; // Ensure it's not negative
   }
+
+  // Initialize LoRa
+  SPI.begin(); // Initialize SPI bus
+  LoRa.setPins(LORA_CS, LORA_RST, LORA_IRQ); // Set LoRa pins
+
+  if (!LoRa.begin(915E6)) {
+    Serial.println("Starting LoRa failed!");
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 15, "LoRa Init");
+    u8g2.drawStr(0, 30, "Failed!");
+    u8g2.sendBuffer();
+    delay(2000);
+    return;
+  }
+  Serial.println("LoRa Initialized");
+  u8g2.clearBuffer();
+  u8g2.drawStr(0, 15, "LoRa Ready");
+  u8g2.drawStr(0, 30, "Listening...");
+  u8g2.sendBuffer();
 }
 
 void loop() {
-  // This loop can be empty as the reset and test message are done in setup
+  // Try to parse packet
+  int packetSize = LoRa.parsePacket();
+
+  if (packetSize) {
+    String receivedMessage = "";
+    while (LoRa.available()) {
+      receivedMessage += (char)LoRa.read();
+    }
+
+    Serial.print("Received packet '");
+    Serial.print(receivedMessage);
+    Serial.print("' with RSSI ");
+    Serial.println(LoRa.packetRssi());
+
+    receivedMessageCount++; // Increment the received message counter
+
+    // Wrap the received message into lines
+    std::vector<String> wrappedMessageLines = wrapString(u8g2, 128, receivedMessage);
+
+    // Add the wrapped message lines, RSSI, and a blank line to the history
+    for (const String& line : wrappedMessageLines) {
+      messageHistory.push_back("Msg: " + line);
+    }
+    messageHistory.push_back("RSSI: " + String(LoRa.packetRssi()));
+    messageHistory.push_back(""); // Add a blank line after each message entry
+
+    // If history size exceeds the maximum lines for history, remove the oldest entries
+    while (messageHistory.size() > maxLinesForHistory) {
+      messageHistory.erase(messageHistory.begin()); // Remove the oldest entry
+    }
+  }
+
+  // Display counter and message history on OLED
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g_font_ncenB08); // Set font again for safety
+  lineHeight = u8g2.getFontAscent() - u8g2.getFontDescent() + 2; // Recalculate just in case
+
+  // Display the received message counter on the top line
+  u8g2.drawStr(0, lineHeight, ("Count: " + String(receivedMessageCount)).c_str());
+
+  // Display message history below the counter
+  int historyStartY = lineHeight * 2; // Start drawing history below the counter line
+  for (int i = 0; i < messageHistory.size(); i++) {
+    int yPos = historyStartY + (i * lineHeight);
+    if (yPos <= 64) { // Only draw if the line is within the screen bounds
+       u8g2.drawStr(0, yPos, messageHistory[i].c_str());
+    } else {
+        // Should not happen with correct history size management, but as a safeguard
+        break;
+    }
+  }
+
+  u8g2.sendBuffer();
+
+  delay(100); // Small delay
 }
