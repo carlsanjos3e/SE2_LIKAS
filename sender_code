@@ -1,3 +1,5 @@
+// Sender module code.
+
 #include <Wire.h>
 #include <U8g2lib.h> // Assuming you were using U8g2lib for your OLED
 #include <SPI.h>
@@ -64,7 +66,7 @@ void setup() {
 }
 
 void loop() {
-  Serial.println("Sending packet: Kailangan po namin ng tulong. May nasugatan");
+  Serial.println("Sending packet: Kailangan po tulong.");
 
   // Display sending status on OLED
   u8g2.clearBuffer();
@@ -76,8 +78,7 @@ void loop() {
   // Send packet
   digitalWrite(LED_PIN, HIGH); // Turn LED on while sending
   LoRa.beginPacket();
-  LoRa.print("Kailangan po");
-  LoRa.print("ng lambingh");
+  LoRa.print("Kailangan po tulong.");
   LoRa.endPacket();
   digitalWrite(LED_PIN, LOW);  // Turn LED off after sending
 
