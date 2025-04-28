@@ -1,14 +1,14 @@
-#include <TinyGPSPlus.h>
-#include <HardwareSerial.h> // For using Serial1 or Serial2 on ESP32
-#include <Wire.h>         // For I2C communication with OLED
-#include <U8g2lib.h>      // For controlling the OLED display
-#include <String>         // For using String objects
+#include <TinyGPSPlus.h> // Include the TinyGPSPlus library
+#include <HardwareSerial.h> // Include HardwareSerial for using Serial1
+#include <Wire.h>         // Include Wire for I2C communication with OLED
+#include <U8g2lib.h>      // Include U8g2lib for controlling the OLED display
+#include <String>         // Include String for using String objects
 
-// --- OLED Definitions (from your previous code) ---
+// --- OLED Definitions (from your previous code and pinout) ---
 // Define the OLED reset pin based on your pinout diagram (GPIO16)
 const int OLED_RESET_PIN = 16;
 
-// Define the I2C pins for OLED based on your pinout diagram
+// Define the I2C pins for OLED based on your pinout diagram (GPIO4 and GPIO15)
 const int OLED_SDA_PIN = 4;
 const int OLED_SCL_PIN = 15;
 
@@ -17,42 +17,49 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* 
 // --------------------------------------------------
 
 // --- GPS Definitions ---
-// Define the ESP32 pins connected to your GPS module
-// Connect ESP32 TX (GPIO17) to GPS RX
-// Connect ESP32 RX (GPIO2) to GPS TX
-#define GPS_RX_PIN 2   // ESP32 pin connected to GPS TX
-#define GPS_TX_PIN 17  // ESP32 pin connected to GPS RX
+// Define the ESP32 pins connected to your GPS module based on the pinout and available UART1
+// Connect ESP32 TX (GPIO10) to GPS RX (The receiving pin on the GPS module)
+// Connect ESP32 RX (GPIO9) to GPS TX (The transmitting pin on the GPS module)
+#define GPS_RX_PIN 9   // ESP32 pin connected to GPS TX
+#define GPS_TX_PIN 10  // ESP32 pin connected to GPS RX
 
-// Define the baud rate of your GPS module (commonly 9600)
+// Define the baud rate of your GPS module (commonly 9600, check your module's documentation)
 #define GPS_BAUD_RATE 9600
 
-// Use Hardware Serial 2 on ESP32 for GPS communication
-HardwareSerial neogps(2); // Use Serial2 on ESP32 (TX on 17, RX on 16 by default, but we'll map to 17 and 2)
+// Use Hardware Serial 1 on ESP32 for GPS communication
+HardwareSerial neogps(1); // Use Serial1 on ESP32 (maps to UART1)
 
 // Create a TinyGPSPlus object
 TinyGPSPlus gps;
 // --------------------------------------------------
 
 void setup() {
+  // Initialize the main serial port for debugging (connected via USB)
   Serial.begin(115200);
-  Serial.println("ESP32 GPS Connection Test");
+  Serial.println("ESP32 GPS Connection Test (Using Serial1)");
 
   // --- Initialize the OLED (from your previous code) ---
+  // Initialize the reset pin for the OLED
   pinMode(OLED_RESET_PIN, OUTPUT);
-  digitalWrite(OLED_RESET_PIN, LOW);
+  digitalWrite(OLED_RESET_PIN, LOW); // Perform reset sequence
   delay(100);
   digitalWrite(OLED_RESET_PIN, HIGH);
+  delay(100);
+
+  // Initialize the I2C bus for the OLED
   Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+
+  // Initialize the U8g2 library
   if (!u8g2.begin()) {
     Serial.println("OLED initialization failed");
   } else {
     Serial.println("OLED initialized");
-    u8g2.setFont(u8g2_font_ncenB10); // Set a font for the OLED display
+    u8g2.setFont(u8g_font_ncenB10); // Set a font for the OLED display
   }
   // -----------------------------------------------------
 
   // --- Initialize GPS serial communication ---
-  // Begin the hardware serial port for GPS
+  // Begin the hardware serial port for GPS (Serial1)
   neogps.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   Serial.println("GPS Serial started on TX: " + String(GPS_TX_PIN) + ", RX: " + String(GPS_RX_PIN));
   // ---------------------------------------------
@@ -68,7 +75,7 @@ void loop() {
   // -----------------------------------
 
   // --- Check for GPS fix and display status ---
-  u8g2.clearBuffer();
+  u8g2.clearBuffer(); // Clear the OLED buffer
 
   // Check if new GPS data has been received and processed
   if (gps.location.isUpdated()) {
@@ -85,6 +92,8 @@ void loop() {
     u8g2.drawStr(0, 30, "Fix Acquired!");
     u8g2.drawStr(0, 45, ("Sats: " + String(gps.satellites.value())).c_str()); // Display satellite count
     // You could display Lat/Lon here too, but it might require text wrapping
+    // u8g2.drawStr(0, 60, ("Lat: " + String(gps.location.lat(), 4)).c_str());
+    // u8g2.drawStr(0, 75, ("Lon: " + String(gps.location.lng(), 4)).c_str());
 
   } else {
     // If no new GPS data has been updated (might still be searching or no signal)
