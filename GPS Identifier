@@ -1,0 +1,103 @@
+#include <TinyGPSPlus.h>
+#include <HardwareSerial.h> // For using Serial1 or Serial2 on ESP32
+#include <Wire.h>         // For I2C communication with OLED
+#include <U8g2lib.h>      // For controlling the OLED display
+#include <String>         // For using String objects
+
+// --- OLED Definitions (from your previous code) ---
+// Define the OLED reset pin based on your pinout diagram (GPIO16)
+const int OLED_RESET_PIN = 16;
+
+// Define the I2C pins for OLED based on your pinout diagram
+const int OLED_SDA_PIN = 4;
+const int OLED_SCL_PIN = 15;
+
+// Initialize the U8g2 library for a 128x64 OLED (adjust if yours is different)
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ OLED_SCL_PIN, /* data=*/ OLED_SDA_PIN);
+// --------------------------------------------------
+
+// --- GPS Definitions ---
+// Define the ESP32 pins connected to your GPS module
+// Connect ESP32 TX (GPIO17) to GPS RX
+// Connect ESP32 RX (GPIO2) to GPS TX
+#define GPS_RX_PIN 2   // ESP32 pin connected to GPS TX
+#define GPS_TX_PIN 17  // ESP32 pin connected to GPS RX
+
+// Define the baud rate of your GPS module (commonly 9600)
+#define GPS_BAUD_RATE 9600
+
+// Use Hardware Serial 2 on ESP32 for GPS communication
+HardwareSerial neogps(2); // Use Serial2 on ESP32 (TX on 17, RX on 16 by default, but we'll map to 17 and 2)
+
+// Create a TinyGPSPlus object
+TinyGPSPlus gps;
+// --------------------------------------------------
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("ESP32 GPS Connection Test");
+
+  // --- Initialize the OLED (from your previous code) ---
+  pinMode(OLED_RESET_PIN, OUTPUT);
+  digitalWrite(OLED_RESET_PIN, LOW);
+  delay(100);
+  digitalWrite(OLED_RESET_PIN, HIGH);
+  Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+  if (!u8g2.begin()) {
+    Serial.println("OLED initialization failed");
+  } else {
+    Serial.println("OLED initialized");
+    u8g2.setFont(u8g2_font_ncenB10); // Set a font for the OLED display
+  }
+  // -----------------------------------------------------
+
+  // --- Initialize GPS serial communication ---
+  // Begin the hardware serial port for GPS
+  neogps.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  Serial.println("GPS Serial started on TX: " + String(GPS_TX_PIN) + ", RX: " + String(GPS_RX_PIN));
+  // ---------------------------------------------
+}
+
+void loop() {
+  // --- Process incoming GPS data ---
+  // While there is data available on the GPS serial port
+  while (neogps.available() > 0) {
+    // Read a character and feed it to the TinyGPSPlus object
+    gps.encode(neogps.read());
+  }
+  // -----------------------------------
+
+  // --- Check for GPS fix and display status ---
+  u8g2.clearBuffer();
+
+  // Check if new GPS data has been received and processed
+  if (gps.location.isUpdated()) {
+    Serial.println("GPS Data Updated");
+    Serial.print("Latitude: ");
+    Serial.println(gps.location.lat(), 6); // Print latitude with 6 decimal places
+    Serial.print("Longitude: ");
+    Serial.println(gps.location.lng(), 6); // Print longitude with 6 decimal places
+    Serial.print("Satellites: ");
+    Serial.println(gps.satellites.value()); // Print the number of satellites
+
+    // Display status and data on the OLED
+    u8g2.drawStr(0, 15, "GPS Status:");
+    u8g2.drawStr(0, 30, "Fix Acquired!");
+    u8g2.drawStr(0, 45, ("Sats: " + String(gps.satellites.value())).c_str()); // Display satellite count
+    // You could display Lat/Lon here too, but it might require text wrapping
+
+  } else {
+    // If no new GPS data has been updated (might still be searching or no signal)
+    Serial.println("Waiting for GPS data...");
+
+    // Display status on the OLED
+    u8g2.drawStr(0, 15, "GPS Status:");
+    u8g2.drawStr(0, 30, "Searching...");
+    u8g2.drawStr(0, 45, ("Sats: " + String(gps.satellites.value())).c_str()); // Display satellite count even if no fix yet
+  }
+  // --------------------------------------------
+
+  u8g2.sendBuffer(); // Send the content to the OLED display
+
+  delay(1000); // Update the display every 1 second
+}
