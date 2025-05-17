@@ -5,6 +5,9 @@
 #include <U8g2lib.h>   // Required for controlling the OLED display
 #include <SPI.h>       // Required for SPI communication (used by LoRa)
 #include <LoRa.h>      // Required for LoRa communication
+#include <TinyGPS++.h> // Required fir GPS data parsing
+#include <HardwareSerial.h> 
+
 
 // --- OLED Definitions ---
 // Define the OLED reset pin based on your pinout diagram (GPIO16)
@@ -82,10 +85,16 @@ int maxVisibleLines = 0;  // Maximum number of menu items that can fit on the sc
 bool oledIsOn = true; // Track the current state of the OLED (starts ON)
 // ---------------------------
 
+// GPS Integration
+HardwareSerial gpsSerial(1);  // Use UART2 (GPIo16=RX, GPIO17=TX)
+TinyGPSPlus gps;
+
 void setup() {
   // Initialize Serial communication for debugging output
   Serial.begin(115200);
   Serial.println("ESP32 LoRa Menu Sender Sketch (with OLED Toggle)");
+  gpsSerial.begin(9600, SERIAL_8N1, 16, 17); //RX=16, TX=17
+
 
   // --- Initialize OLED ---
   pinMode(OLED_RESET_PIN, OUTPUT);
@@ -149,6 +158,19 @@ void loop() {
   int readingDown = digitalRead(BUTTON_DOWN_PIN);
   int readingEnter = digitalRead(BUTTON_ENTER_PIN);
   int readingOledToggle = digitalRead(BUTTON_OLED_TOGGLE_PIN); // Read the new button
+
+// Read data from gpsSerial then parse with TinyGPS++
+while (gpsSerial.available()) {
+  char c = gpsSerial.read();
+    Serial.write(c);
+}
+
+if (gps.location.isUpdated()) {
+  float lat = gps.location.lat();
+  float lng = gps.location.lng();
+  Serial.print("Latitude: "); Serial.println(lat, 6);
+  Serial.print("Longitude: "); Serial.println(lng, 6);
+}
 
   // --- Debouncing and State Check for Up Button ---
   if (readingUp != lastButtonUpState) {
@@ -214,6 +236,8 @@ void loop() {
       if (buttonEnterState == LOW) { // Enter Button is pressed
         Serial.print("Enter Button Pushed! Selected: ");
         Serial.println(menuItems[selectedMenuItem]);
+        
+
 
         // Only perform action if OLED is ON
         if (oledIsOn) {
@@ -222,12 +246,27 @@ void loop() {
             u8g2.setFont(u8g_font_ncenB08); // Set font for feedback
 
             String messageToSend = ""; // String to hold the message
+            String gps_message = menuItems[selectedMenuItem];
+            gps_message += " @ ";
 
+           if (gps.location.isValid()) {
+             float lat = gps.location.lat();
+             float lng = gps.location.lng();
+          
+             gps_message += String(lat, 6);
+             gps_message += ",";
+             gps_message += String(lng, 6);
+           } else {
+             gps_message += "Location unavailable";
+           }
+
+            // 'messageToSend' is selected message
+            // 'message' is for the GPS coordinates
             switch (selectedMenuItem) {
               case 0: // "TULONG!"
-                messageToSend = "TULONG!";
+                messageToSend = "TULONG!" + gps_message;
                 u8g2.drawStr(0, 30, "Sending TULONG!");
-                Serial.println("Action: Sending TULONG!");
+                Serial.println("Action: Sending" +gps_message);
                 break;
               case 1: // "Wala kuryente/signal"
                 messageToSend = "Wala kuryente/signal";
@@ -354,3 +393,8 @@ void loop() {
   // A small delay can help with overall loop stability
   delay(10);
 }
+
+
+
+
+
