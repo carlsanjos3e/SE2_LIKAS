@@ -262,43 +262,53 @@ if (gps.location.isUpdated()) {
 
             // 'messageToSend' is selected message
             // 'message' is for the GPS coordinates
-            switch (selectedMenuItem) {
-              case 0: // "TULONG!"
-                messageToSend = "TULONG!" + gps_message;
-                u8g2.drawStr(0, 30, "Sending TULONG!");
-                Serial.println("Action: Sending" +gps_message);
-                break;
-              case 1: // "Wala kuryente/signal"
-                messageToSend = "Wala kuryente/signal";
-                u8g2.drawStr(0, 30, "Sending Wala kuryente/signal");
-                Serial.println("Action: Sending Wala kuryente/signal");
-                break;
-              case 2: // "Kailangan pagkain/tubig"
-                messageToSend = "Kailangan pagkain/tubig";
-                u8g2.drawStr(0, 30, "Sending Kailangan pagkain/tubig");
-                Serial.println("Action: Sending Kailangan pagkain/tubig");
-                break;
-              case 3: // "Kailangan sundo"
-                messageToSend = "Kailangan sundo";
-                u8g2.drawStr(0, 30, "Sending Kailangan sundo");
-                Serial.println("Action: Sending Kailangan sundo");
-                break;
-              case 4: // "Walang matuluyan"
-                messageToSend = "Walang matuluyan";
-                u8g2.drawStr(0, 30, "Sending Walang matuluyan");
-                Serial.println("Action: Sending Walang matuluyan");
-                break;
-               case 5: // "Lubog sa baha"
-                messageToSend = "Lubog sa baha";
-                u8g2.drawStr(0, 30, "Sending Lubog sa baha");
-                Serial.println("Action: Sending Lubog sa baha");
-                break;
-              default: // Should not happen with the updated menuItems size
-                messageToSend = "CMD:UNKNOWN";
-                u8g2.drawStr(0, 30, "Sending Unknown Cmd");
-                Serial.println("Action: Sending Unknown Command");
-                break;
-            }
+          const char* loRaMessages[] = {
+  "TULONG!",
+  "Wala kuryente/signal",
+  "Kailangan pagkain/tubig",
+  "Kailangan sundo",
+  "Walang matuluyan",
+  "Lubog sa baha"
+};
+
+const char* oledFeedback[] = {
+  "Sending TULONG!",
+  "Sending Wala kuryente/signal",
+  "Sending Kailangan pagkain/tubig",
+  "Sending Kailangan sundo",
+  "Sending Walang matuluyan",
+  "Sending Lubog sa baha"
+};
+
+if (selectedMenuItem >= 0 && selectedMenuItem < numMenuItems) {
+  String messageToSend = loRaMessages[selectedMenuItem];
+
+  // Append coordinates only to “TULONG!”
+  if (selectedMenuItem == 0) {
+    float lat, lng;
+    if (gps.location.isValid()) {
+      lat = gps.location.lat();
+      lng = gps.location.lng();
+    } else {
+      lat = 13.100000 + (random(0, 100000) / 1000000.0);
+      lng = 123.400000 + (random(0, 100000) / 1000000.0);
+    }
+    messageToSend += " " + String(lat, 6) + "," + String(lng, 6);
+  }
+
+  u8g2.drawStr(0, 30, oledFeedback[selectedMenuItem]);
+  Serial.println("Action: Sending " + messageToSend);
+
+  // Send the LoRa message
+  LoRa.beginPacket();
+  LoRa.print(messageToSend);
+  LoRa.endPacket();
+  Serial.println("LoRa packet sent.");
+} else {
+  u8g2.drawStr(0, 30, "Sending Unknown Cmd");
+  Serial.println("Action: Sending Unknown Command");
+}
+
 
             // Send the LoRa packet if a message was defined
             if (messageToSend.length() > 0) {
@@ -393,7 +403,6 @@ if (gps.location.isUpdated()) {
   // A small delay can help with overall loop stability
   delay(10);
 }
-
 
 
 
